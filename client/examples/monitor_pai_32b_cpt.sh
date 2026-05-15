@@ -1,0 +1,1 @@
+python3 ../monitor.py --url https://dsw-gateway-cn-hangzhou-acdr-ut-1.data.aliyun.com/dsw-66135/ide/proxy/8000/training_status.json --interval 30 --stall_threshold 600 --robot default_alpha --at_user_ids 000808 --cluster dsw

@@ -22,3 +22,19 @@ class X10000Resolver(Middleware):
             context.current_log_path = os.path.join(latest_dir, files[0])
             relative_path = context.current_log_path.replace(context.args.base_dir, '').lstrip('/')
             context.data["log_file"] = relative_path
+
+
+class AliYunDSWResolver(Middleware): 
+    def process(self, context):
+        """根据通配符模式寻找最新的日志文件"""
+        pattern = os.path.join(context.args.base_dir, context.args.pattern)
+        # print(pattern)
+        log_files = glob.glob(pattern)
+        
+        if not log_files: return
+        
+        # 按最后修改时间排序，取最新的一个
+        log_files.sort(key=os.path.getmtime, reverse=True)
+        context.current_log_path = log_files[0]
+        relative_path = context.current_log_path.replace(context.args.base_dir, '').lstrip('/')
+        context.data["log_file"] = relative_path

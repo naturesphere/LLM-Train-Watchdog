@@ -1,7 +1,7 @@
 import argparse
 from core.engine import MonitorEngine
 from core.context import MonitorContext
-from handlers.resolvers import X10000Resolver
+from handlers.resolvers import X10000Resolver, AliYunDSWResolver
 from handlers.parsers import LossParser, IterationParser
 from handlers.analyzers import RestartDetector, SpikeDetector, Archiver, StalledDetector, PersistentHighLossDetector
 
@@ -25,6 +25,8 @@ if __name__ == "__main__":
     # 组装中间件流水线
     if args.platform == 'x10000':
         engine.add_middleware(X10000Resolver())
+    else:
+        engine.add_middleware(AliYunDSWResolver())
     engine.add_middleware(RestartDetector())
     engine.add_middleware(IterationParser())
     engine.add_middleware(StalledDetector())
