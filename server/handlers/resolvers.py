@@ -45,7 +45,6 @@ class AliYunDSWResolver(X10000Resolver):
         # 按最后修改时间排序，取最新的一个
         log_files.sort(key=os.path.getmtime, reverse=True)
         log_file = log_files[0]
-        print(log_file)
         context.current_log_path = log_file
         relative_path = context.current_log_path.replace(context.args.base_dir, '').lstrip('/')
         context.data["log_file"] = relative_path
