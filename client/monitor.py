@@ -1,158 +1,144 @@
-import os
-import glob
-import time
 import argparse
-import re
-import json
-import threading
-import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from utils.data_sources import DSWSource, LocalSource
+from utils.notifier import DingTalkNotifier
+import time
+from datetime import datetime
 
-# --- 1. 平台适配逻辑 (策略模式) ---
 
-class LogResolver:
-    """日志路径解析基类"""
-    def get_latest_file(self, base_dir, pattern):
-        raise NotImplementedError
-    
-    def natural_keys(self, text):
-        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', text)]
 
-class X10000Resolver(LogResolver):
-    """适配x10000目录结构的平台"""
-    def get_latest_file(self, base_dir, pattern):
-        full_pattern = os.path.join(base_dir, pattern)
-        log_dirs = glob.glob(full_pattern)
-        if not log_dirs: return None
-        
-        # 先按目录名自然排序取最新的
-        log_dirs.sort(key=self.natural_keys, reverse=True)
-        latest_dir = log_dirs[0]
-        
-        # 再按文件名自然排序取最新的文件
-        files = [f for f in os.listdir(latest_dir) if f.endswith('.log')]
-        if not files: return None
-        files.sort(key=self.natural_keys, reverse=True)
-        return os.path.join(latest_dir, files[0])
-
-class FlatResolver(LogResolver):
-    """适配扁平化目录结构，直接按修改时间排序"""
-    def get_latest_file(self, base_dir, pattern):
-        files = glob.glob(os.path.join(base_dir, "*.log"))
-        if not files: return None
-        # 修改时间相同则按文件名自然排序降序
-        files.sort(key=lambda x: (os.path.getmtime(x), self.natural_keys(x)), reverse=True)
-        return files[0]
-
-# --- 2. HTTP 服务部分 ---
-
-class NoCacheHandler(SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
-        super().end_headers()
-
-def start_server(port, directory):
-    """固定使用 127.0.0.1，确保全平台兼容"""
-    os.chdir(directory)
-    host = '127.0.0.1'
-    server = HTTPServer((host, port), NoCacheHandler)
-    # 模拟标准输出以触发 VS Code 自动映射
-    print(f"\n[HTTP Server] Serving HTTP on {host} port {port} (http://{host}:{port}/) ...")
-    server.serve_forever()
-
-# --- 3. 监控主逻辑 ---
-
-def monitor_logs(args, resolver):
-    output_path = os.path.join(args.base_dir, "training_status.json")
-
-    # 启动后台服务线程
-    threading.Thread(target=start_server, args=(args.port, args.base_dir), daemon=True).start()
-
-    print(f"\n[Monitor] 启动成功！平台模式: {args.platform}")
-    print(f"[Monitor] 正在监控: {args.base_dir}")
-    print("-" * 50)
-
-    last_check_status = ""
-    last_log_path = None
-
-    while True:
-        current_log = resolver.get_latest_file(args.base_dir, args.pattern)
-        current_time = time.time()
-        time_str = time.strftime('%Y-%m-%d %H:%M:%S')
-        
-        data = {
-            "updated": time_str,
-            "status": "UNKNOWN",
-            "log_file": os.path.basename(current_log) if current_log else None,
-            "idle_seconds": 0,
-            "message": "",
-            "restarted": False,
-            "is_spike": False # 预留尖峰报警位
-        }
-
-        if not current_log:
-            data["status"] = "WAITING"
-            data["message"] = "未找到日志文件..."
-        else:
-            # 重启检测
-            if last_log_path and last_log_path != current_log:
-                data["restarted"] = True
-            last_log_path = current_log
-
-            mtime = os.path.getmtime(current_log)
-            data["idle_seconds"] = int(current_time - mtime)
-            
-            if data["idle_seconds"] > args.threshold:
-                data["status"] = "STALLED"
-                data["message"] = f"停更 {data['idle_seconds']}s"
-            else:
-                try:
-                    with open(current_log, 'r', errors='ignore') as f:
-                        f.seek(0, 2)
-                        f.seek(max(0, f.tell() - 4096))
-                        lines = f.readlines()
-                        
-                        log_msg = "Waiting for data..."
-                        for line in reversed(lines):
-                            if args.keyword.lower() in line.lower():
-                                log_msg = line.strip()
-                                # 这里可以扩展数值提取和 is_spike 判定逻辑
-                                break
-                        data["status"] = "RUNNING"
-                        data["message"] = log_msg
-                except Exception as e:
-                    data["status"] = "ERROR"
-                    data["message"] = str(e)
-
-        with open(output_path, "w", encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-
-        summary = f"{data['status']} | {data['message']}"
-        if summary != last_check_status or data["restarted"]:
-            print(f"[{time_str}] {summary} {'(RESTARTED!)' if data['restarted'] else ''}")
-            last_check_status = summary
-            
-        time.sleep(args.interval)
-
-# --- 4. 入口 ---
-
-def get_args():
+def get_args(): 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_dir", type=str, default=".")
-    parser.add_argument("--pattern", type=str, default="*/worker_*/none_*/attempt_0/*/stdout.log")
-    parser.add_argument("--platform", choices=["x10000", "flat"], default="x10000")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--interval", type=int, default=30)
-    parser.add_argument("--threshold", type=int, default=600)
-    parser.add_argument("--keyword", type=str, default="lm loss")
+    parser.add_argument("--robot", default="default_alpha", help="选择使用的钉钉机器人")
+    parser.add_argument("--cluster", choices=["dsw", "x10000"], default="x10000")
+    parser.add_argument("--url", help="自定义 URL")
+    parser.add_argument("--interval", type=int, default=30, help="检查间隔秒数")
+    parser.add_argument("--stall_threshold", type=int, default=600, help="停更报警阈值秒数")
     return parser.parse_args()
 
-if __name__ == "__main__":
+
+def monitor(args):
+    last_step = -1
+    last_update_time = time.time()
+    last_status = "UNKNOWN"
+    already_alerted_network_error = False
+    already_alerted_watchdog_down = False
+    already_alerted_stalled = False
+    last_watchdog_update_time = 0
+
+    # 根据参数选择数据源
+    if args.cluster == "dsw":
+        url = args.url or "https://.../training_status.json"
+        source = DSWSource(url)
+    else:
+        url = args.url or "http://127.0.0.1:8003/training_status.json"
+        source = LocalSource(url)
+    print(f"监控启动，当前数据源: {type(source).__name__}")
+    
+
+    notifier = DingTalkNotifier("config/robots.yaml")
+    while True:
+        data = source.get_data() # 多态调用
+        now = time.time()
+        if not data:
+            print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，正在重试...")
+            if not already_alerted_network_error:
+                idle_sec = now - last_update_time
+                print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，已超过 {int(idle_sec)}s 未更新...")
+                if idle_sec >= args.stall_threshold:
+                    print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，已超过 {args.stall_threshold}s 未更新！")
+                    alert_reason = f"❌ **无法获取数据：请检查 VPN 或 Cookie 是否失效**"
+                    notifier.send_message(args.robot, alert_reason, at_user_ids=['000808'])
+                    already_alerted_network_error = True
+                else:
+                    print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，但还未达到报警阈值。")
+            else:
+                print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，已超过报警阈值，等待下一次检查...")
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] 成功获取数据: 状态 {data.get('status', 'N/A')} | 步数 {data.get('current_step', 'N/A')}/{data.get('total_steps', 'N/A')} | Loss {data.get('current_loss', 'N/A')}")
+            already_alerted_network_error = False
+            time_str = data.get("updated", '1970-01-01 00:00:00')
+            watchdog_update_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp()
+            if watchdog_update_time <= last_watchdog_update_time:
+                if status == "FINISHED":
+                    print(f"[{time.strftime('%H:%M:%S')}] 任务已完成，监控结束。")
+                    break
+                elif not already_alerted_watchdog_down:
+                    idle_sec = now - last_update_time
+                    if idle_sec >= args.stall_threshold:
+                        alert_reason = f"❌ **服务端进程出错：超过 {args.stall_threshold}s 未见数据更新**"
+                        notifier.send_message(args.robot, alert_reason, at_user_ids=['000808'])
+                        already_alerted_watchdog_down = True
+                    else:
+                        print(f"[{time.strftime('%H:%M:%S')}] 数据未更新，已超过 {int(idle_sec)}s，但还未达到报警阈值。")
+                else:
+                    print(f"[{time.strftime('%H:%M:%S')}] 数据未更新，已超过报警阈值，等待下一次检查...")
+                    
+            else:
+                print(f"[{time.strftime('%H:%M:%S')}] 数据更新，重置停更报警计时器。")
+                already_alerted_watchdog_down = False
+                last_watchdog_update_time = watchdog_update_time
+                last_update_time = now
+                status = data.get("status", "UNKNOWN")
+                curr_step = data.get("current_step", 0)
+                total_step = data.get("total_steps", 0)
+                loss = data.get("current_loss", "N/A")
+                msg = data.get("message", "")
+                is_spike = data.get("is_spike", False)
+                restarted = data.get("restarted", False)    
+            
+                if status == "FINISHED":
+                    alert_reason = f"✅ **任务完成：模型已达到目标步数**"
+                    content = (
+                        f"- **当前状态**: {status}\n"
+                        f"- **训练进度**: `{curr_step} / {total_step}`\n"
+                        f"- **当前 Loss**: `{loss}`\n\n"
+                        f"{alert_reason}"
+                    )
+                    notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                    break
+                else:
+                    # 1. 检查进度是否有变化 (用 step 判断比用 text 判断更准)
+                    if curr_step == last_step:
+                        print(f"[{time.strftime('%H:%M:%S')}] 进度未变: {curr_step}/{total_step} | Loss: {loss}")
+                        if status == "STALLED" and not already_alerted_stalled:
+                            alert_reason = f"⚠️ **训练卡死**\n> {msg}"
+                            content = (
+                                f"- **当前状态**: {status}\n"
+                                f"- **训练进度**: `{curr_step} / {total_step}`\n"
+                                f"- **当前 Loss**: `{loss}`\n\n"
+                                f"{alert_reason}"
+                            )
+                            notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                            already_alerted_stalled = True
+                    else:
+                        already_alerted_stalled = False
+                        last_step = curr_step
+                        print(f"[{time.strftime('%H:%M:%S')}] 进度更新: {curr_step}/{total_step} | Loss: {loss} | is_spike: {is_spike} | restarted: {restarted}")
+                        alert_reason = ""
+                        if status == "CRITICAL" and last_status != "CRITICAL":
+                            alert_reason = f"🚨 **训练异常：Loss 持续过高**\n> {msg}"
+                        # elif is_spike:
+                        #     alert_reason = f"📉 **瞬时尖峰：检测到 Loss 突变**\n> {msg}"
+                        elif restarted:
+                            alert_reason = f"🔄 **训练重启：检测到训练进程重启**\n> {msg}"
+                        # 发送报警
+                        if alert_reason:
+                            content = (
+                                f"- **当前状态**: {status}\n"
+                                f"- **训练进度**: `{curr_step} / {total_step}`\n"
+                                f"- **当前 Loss**: `{loss}`\n\n"
+                                f"{alert_reason}"
+                            )
+                            notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                        last_status = status
+  
+        time.sleep(args.interval)
+
+
+def main():
     args = get_args()
-    resolvers = {"x10000": X10000Resolver(), "flat": FlatResolver()}
-    try:
-        monitor_logs(args, resolvers[args.platform])
-    except KeyboardInterrupt:
-        sys.exit(0)
+    monitor(args)
+
+
+if __name__ == "__main__":
+    main()

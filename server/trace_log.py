@@ -13,6 +13,7 @@ def get_args():
     parser.add_argument("--interval", type=int, default=30)
     parser.add_argument("--threshold", type=int, default=600)
     parser.add_argument("--keyword", type=str, default="lm loss")
+    parser.add_argument("--start_server", action="store_true")
     return parser.parse_args()
 
 if __name__ == "__main__":

@@ -1,0 +1,1 @@
+python3 monitor.py --url http://127.0.0.1:8889/training_status.json --interval 3 --stall_threshold 10 

@@ -12,6 +12,35 @@ class RestartDetector(Middleware):
             context.data["restarted"] = False
         context.last_log_path = context.current_log_path
 
+class StalledDetector(Middleware):
+    """
+    停更检查处理器：
+    如果日志文件超过指定阈值（threshold）未更新，则将状态判定为 STALLED。
+    """
+    def process(self, context):
+        if not context.current_log_path:
+            context.data["status"] = "UNKNOWN"
+            context.data["message"] = "No log file detected."
+            return
+
+        # 获取当前时间和文件最后修改时间
+        current_time = time.time()
+        try:
+            mtime = os.path.getmtime(context.current_log_path)
+            idle_seconds = int(current_time - mtime)
+            context.data["idle_seconds"] = idle_seconds
+
+            # 逻辑判断：如果空闲时间超过阈值
+            if idle_seconds > context.args.threshold:
+                context.data["status"] = "STALLED"
+                context.data["message"] = f"训练卡死：已停止更新 {idle_seconds} 秒"
+            # 注意：这里不需要手动把状态改回 RUNNING，
+            # 应该由后面的 LossParser 发现新数据后再改为 RUNNING。
+            
+        except OSError:
+            context.data["status"] = "ERROR"
+            context.data["message"] = "无法读取日志文件时间戳"
+
 class SpikeDetector(Middleware):
     def __init__(self, window_size=15, threshold=1.3):
         self.history = deque(maxlen=window_size)

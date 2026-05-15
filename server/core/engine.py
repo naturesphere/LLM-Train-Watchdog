@@ -22,11 +22,13 @@ class MonitorEngine:
 
     def start(self):
         # 1. 启动 HTTP 服务线程
-        threading.Thread(
-            target=start_server, 
-            args=(self.context.args.port, self.context.args.base_dir), 
-            daemon=True
-        ).start()
+        if self.context.args.start_server:
+            threading.Thread(
+                target=start_server, 
+                args=(self.context.args.port, self.context.args.base_dir), 
+                daemon=True
+            ).start()
+            print(f"Web server started on port {self.context.args.port}...")
 
         # 2. 主监控循环
         print(f"Monitoring started on {self.context.args.base_dir}...")
