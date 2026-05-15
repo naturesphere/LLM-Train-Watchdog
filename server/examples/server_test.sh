@@ -1,0 +1,1 @@
+python ../trace_log.py --base_dir /mnt/si001081jz1d/users/xiebing/output/pt-test-2B --pattern 021-236B-128t-bf16-*/ --interval 10 --threshold 60 

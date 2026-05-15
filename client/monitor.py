@@ -3,7 +3,7 @@ from utils.data_sources import DSWSource, LocalSource
 from utils.notifier import DingTalkNotifier
 import time
 from datetime import datetime
-
+import os
 
 
 def get_args(): 
@@ -13,6 +13,7 @@ def get_args():
     parser.add_argument("--url", help="自定义 URL")
     parser.add_argument("--interval", type=int, default=30, help="检查间隔秒数")
     parser.add_argument("--stall_threshold", type=int, default=600, help="停更报警阈值秒数")
+    parser.add_argument("--at_user_ids", nargs='*', default=['000808'], help="需要 @ 的用户 ID 列表")
     return parser.parse_args()
 
 
@@ -34,8 +35,8 @@ def monitor(args):
         source = LocalSource(url)
     print(f"监控启动，当前数据源: {type(source).__name__}")
     
-
-    notifier = DingTalkNotifier("config/robots.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config", "robots.yaml")
+    notifier = DingTalkNotifier(config_path)
     while True:
         data = source.get_data() # 多态调用
         now = time.time()
@@ -47,7 +48,7 @@ def monitor(args):
                 if idle_sec >= args.stall_threshold:
                     print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，已超过 {args.stall_threshold}s 未更新！")
                     alert_reason = f"❌ **无法获取数据：请检查 VPN 或 Cookie 是否失效**"
-                    notifier.send_message(args.robot, alert_reason, at_user_ids=['000808'])
+                    notifier.send_message(args.robot, alert_reason, at_user_ids=args.at_user_ids)
                     already_alerted_network_error = True
                 else:
                     print(f"[{time.strftime('%H:%M:%S')}] 无法获取数据，但还未达到报警阈值。")
@@ -66,7 +67,7 @@ def monitor(args):
                     idle_sec = now - last_update_time
                     if idle_sec >= args.stall_threshold:
                         alert_reason = f"❌ **服务端进程出错：超过 {args.stall_threshold}s 未见数据更新**"
-                        notifier.send_message(args.robot, alert_reason, at_user_ids=['000808'])
+                        notifier.send_message(args.robot, alert_reason, at_user_ids=args.at_user_ids)
                         already_alerted_watchdog_down = True
                     else:
                         print(f"[{time.strftime('%H:%M:%S')}] 数据未更新，已超过 {int(idle_sec)}s，但还未达到报警阈值。")
@@ -94,7 +95,7 @@ def monitor(args):
                         f"- **当前 Loss**: `{loss}`\n\n"
                         f"{alert_reason}"
                     )
-                    notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                    notifier.send_message(args.robot, content, at_user_ids=args.at_user_ids)
                     break
                 else:
                     # 1. 检查进度是否有变化 (用 step 判断比用 text 判断更准)
@@ -108,7 +109,7 @@ def monitor(args):
                                 f"- **当前 Loss**: `{loss}`\n\n"
                                 f"{alert_reason}"
                             )
-                            notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                            notifier.send_message(args.robot, content, at_user_ids=args.at_user_ids)
                             already_alerted_stalled = True
                     else:
                         already_alerted_stalled = False
@@ -129,7 +130,7 @@ def monitor(args):
                                 f"- **当前 Loss**: `{loss}`\n\n"
                                 f"{alert_reason}"
                             )
-                            notifier.send_message(args.robot, content, at_user_ids=['000808'])
+                            notifier.send_message(args.robot, content, at_user_ids=args.at_user_ids)
                         last_status = status
   
         time.sleep(args.interval)

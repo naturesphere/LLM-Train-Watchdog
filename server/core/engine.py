@@ -2,6 +2,7 @@ import time
 import json
 import threading
 from core.web_server import start_server
+import sys
 
 class MonitorEngine:
     def __init__(self, context):
@@ -39,5 +40,12 @@ class MonitorEngine:
             output_path = f"{self.context.args.base_dir}/training_status.json"
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(self.context.data, f, indent=4, ensure_ascii=False)
+
+            if self.context.should_exit:
+                print(f"[Engine] 收到退出信号，正在保存状态并关闭监控...")
+                # 给予客户端最后一次读取 JSON 的时间（可选）
+                time.sleep(self.context.args.interval) 
+                print("[Engine] Goodbye.")
+                sys.exit(0)  # 彻底退出程序
             
             time.sleep(self.context.args.interval)

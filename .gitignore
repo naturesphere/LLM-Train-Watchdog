@@ -1,3 +1,4 @@
 .vscode
 client/config/*.yaml
 .DS_Store
+__pycache__/

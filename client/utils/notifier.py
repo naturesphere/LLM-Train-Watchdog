@@ -78,5 +78,5 @@ class DingTalkNotifier:
 if __name__ == "__main__":
     # 假设在 client 目录下运行
     notifier = DingTalkNotifier("../config/robots.yaml")
-    notifier.send_message("default_alpha", "测试消息：这是 Alpha 机器人。", 'test', at_user_ids=['000808'])
-    # notifier.send_message("021_beta", "测试消息：这是 Beta 机器人。")
+    notifier.send_message("default_alpha", "测试消息：这是 Alpha 机器人。", 'test', at_user_ids=['000808', '001081', '002234'])
+    notifier.send_message("021_beta", "测试消息：这是 Beta 机器人。", 'test', at_user_ids=['000808', '001081', '002234']) 

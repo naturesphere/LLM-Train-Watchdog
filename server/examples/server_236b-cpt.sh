@@ -1,0 +1,1 @@
+python ../trace_log.py --base_dir /mnt/si001081jz1d/users/cjj/output/236B_CPT_5T --pattern 021-236B-128t-bf16-*/ --interval 30 --threshold 600 

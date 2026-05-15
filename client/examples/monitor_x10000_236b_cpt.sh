@@ -1,0 +1,1 @@
+python3 ../monitor.py --url http://127.0.0.1:8003/training_status.json --interval 30 --stall_threshold 600 --robot 021_beta --at_user_ids 000808 001081 002234
